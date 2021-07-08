@@ -26,6 +26,8 @@ func main() {
 		WorkerId:            workerId,
 		ConsumerId:          consumerId,
 		ConsumerWorkerCount: 8,
+		ServiceName:         "example",
+			
 	}, func(e model.MessageEvent) {
 		processMessageEvent(e)
 	})
@@ -42,6 +44,7 @@ func main() {
 	log.Println("Shutdown signal received")
 	eventHandler.Stop()
 }
+
 func processMessageEvent(e model.MessageEvent) {
 	// just print message details to console
 	log.Printf("Received message\nFrom=%s\nTo=%s\nContent=%s\n",
