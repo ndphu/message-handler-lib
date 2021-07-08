@@ -1,9 +1,7 @@
 package utils
 
-
-func GetQueueAndExchangeName(workerId string, consumerId string) (string, string) {
+func GetQueueAndExchangeName(serviceName, workerId, consumerId string) (string, string) {
 	exchange := "/worker/" + workerId + "/textMessages"
-	queueName := "/message-handler/example-message-handler-" + consumerId
+	queueName := "/message-handler/" + serviceName + "/queue-" + consumerId
 	return exchange, queueName
 }
-

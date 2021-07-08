@@ -2,12 +2,11 @@ package broker
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/streadway/amqp"
 	"log"
 	"os"
 )
-
-const defaultRMQUrl = "amqp://guest:guest@192.168.99.101:5672/"
 
 var connection *amqp.Connection = nil
 
@@ -36,7 +35,7 @@ func NewBroker() (*Broker, error) {
 func init() {
 	var rmqUrl string
 	if rmqUrl = os.Getenv("BROKER_URL"); rmqUrl == "" {
-		rmqUrl = defaultRMQUrl
+		panic(errors.New("BROKER_URL environment variable should be defined"))
 	}
 	log.Println("Connecting to RMQ", rmqUrl)
 	conn, err := amqp.Dial(rmqUrl)

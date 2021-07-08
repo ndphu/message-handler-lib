@@ -21,6 +21,7 @@ type EventHandlerConfig struct {
 	WorkerId            string
 	ConsumerId          string
 	ConsumerWorkerCount int
+	ServiceName         string
 }
 
 func (h *EventHandler) Start() error {
@@ -34,7 +35,7 @@ func (h *EventHandler) Stop() error {
 
 func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, error) {
 	// loading configuration
-	exchange, queueName := utils.GetQueueAndExchangeName(c.WorkerId, c.ConsumerId)
+	exchange, queueName := utils.GetQueueAndExchangeName(c.ServiceName, c.WorkerId, c.ConsumerId)
 
 	// binding
 	if err := SetupMessageQueue(exchange, queueName); err != nil {
