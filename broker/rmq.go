@@ -2,7 +2,6 @@ package broker
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/streadway/amqp"
 	"log"
 	"os"
@@ -16,7 +15,7 @@ type Broker struct {
 }
 
 func NewBroker() (*Broker, error) {
-	if channel, err := connection.Channel(); err != nil {
+	if channel, err := NewChannel(); err != nil {
 		return nil, err
 	} else {
 		if err := channel.Qos(250,
@@ -32,18 +31,46 @@ func NewBroker() (*Broker, error) {
 	}
 }
 
-func init() {
-	var rmqUrl string
-	if rmqUrl = os.Getenv("BROKER_URL"); rmqUrl == "" {
-		panic(errors.New("BROKER_URL environment variable should be defined"))
-	}
-	log.Println("Connecting to RMQ", rmqUrl)
+func NewConnection(rmqUrl string) (*amqp.Connection, error) {
 	conn, err := amqp.Dial(rmqUrl)
-	failOnError(err, "Failed to connect to RabbitMQ")
-	channel, err := conn.Channel()
-	failOnError(err, "Failed to get channel from connection")
-	defer channel.Close()
-	connection = conn
+	if err != nil {
+		return nil, err
+	}
+	// test create channel
+	if channel, err := conn.Channel(); err != nil {
+		if !conn.IsClosed() {
+			conn.Close()
+		}
+		return nil, err
+	} else {
+		channel.Close()
+		return conn, err
+	}
+}
+
+func NewChannel() (*amqp.Channel, error) {
+	channel, err := connection.Channel()
+	if err != nil {
+		if !connection.IsClosed() {
+			connection.Close()
+		}
+		newConnection, err := NewConnection(os.Getenv("BROKER_URL"))
+		if err != nil {
+			return nil, err
+		}
+		connection = newConnection
+		return connection.Channel()
+	} else {
+		return channel, nil
+	}
+}
+
+func init() {
+	newConnection, err := NewConnection(os.Getenv("BROKER_URL"))
+	if err != nil {
+		panic(err)
+	}
+	connection = newConnection
 }
 
 func (r *Broker) DeclareQueue(queueName string) (amqp.Queue, error) {
