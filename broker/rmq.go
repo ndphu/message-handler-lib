@@ -5,17 +5,26 @@ import (
 	"github.com/streadway/amqp"
 	"log"
 	"os"
+	"sync"
+	"time"
 )
 
-var connection *amqp.Connection = nil
+var rmqConnection *RmqConnection
+var connLock = sync.Mutex{}
+var sigChan = make(chan *amqp.Error)
 
-type Broker struct {
-	connection *amqp.Connection
-	channel    *amqp.Channel
+type RmqConnection struct {
+	conn                         *amqp.Connection
+	lock                         sync.Mutex
+	OnConnectionChangedListeners []OnConnectionChanged
 }
 
-func NewBroker() (*Broker, error) {
-	if channel, err := NewChannel(); err != nil {
+func GetConnection() *RmqConnection {
+	return rmqConnection
+}
+
+func (rc *RmqConnection) NewBroker() (*Broker, error) {
+	if channel, err := rc.NewChannel(); err != nil {
 		return nil, err
 	} else {
 		if err := channel.Qos(250,
@@ -24,53 +33,78 @@ func NewBroker() (*Broker, error) {
 			log.Println("Fail to setup Qos for channel", err.Error())
 			return nil, err
 		}
-		return &Broker{
-			connection: connection,
+		b := &Broker{
+			connection: rc.conn,
 			channel:    channel,
-		}, nil
+		}
+		return b, nil
 	}
 }
 
-func NewConnection(rmqUrl string) (*amqp.Connection, error) {
-	conn, err := amqp.Dial(rmqUrl)
-	if err != nil {
-		return nil, err
-	}
-	// test create channel
-	if channel, err := conn.Channel(); err != nil {
-		if !conn.IsClosed() {
-			conn.Close()
-		}
-		return nil, err
-	} else {
-		channel.Close()
-		return conn, err
-	}
+type Broker struct {
+	connection    *amqp.Connection
+	channel       *amqp.Channel
+	closeCallback OnConnectionChanged
 }
 
-func NewChannel() (*amqp.Channel, error) {
-	channel, err := connection.Channel()
-	if err != nil {
-		if !connection.IsClosed() {
-			connection.Close()
-		}
-		newConnection, err := NewConnection(os.Getenv("BROKER_URL"))
-		if err != nil {
-			return nil, err
-		}
-		connection = newConnection
-		return connection.Channel()
-	} else {
-		return channel, nil
-	}
-}
+type OnConnectionChanged func(e *amqp.Error)
 
 func init() {
-	newConnection, err := NewConnection(os.Getenv("BROKER_URL"))
-	if err != nil {
-		panic(err)
+	reconnectWait := 5
+	rmqConnection = &RmqConnection{}
+	if err := connect(); err != nil {
+		log.Fatalf("Fail to connect to RabbitMQ by error=%v\n", err)
 	}
-	connection = newConnection
+
+	go func() {
+		for {
+			e := <-sigChan
+			log.Printf("Connection closed. Error = %v\n", e)
+			for {
+				if err := connect(); err != nil {
+					log.Printf("Fail to reconnect by error=%v\n.", err)
+					log.Printf("Retry in %d seconds\n", reconnectWait)
+					time.Sleep(time.Duration(reconnectWait) * time.Second)
+				} else {
+					log.Println("Reconnected!")
+					rmqConnection.lock.Lock()
+					for _, listener := range rmqConnection.OnConnectionChangedListeners {
+						go listener(e)
+					}
+					rmqConnection.lock.Unlock()
+					break
+				}
+			}
+		}
+	}()
+}
+
+func connect() error {
+	connLock.Lock()
+	conn, err := amqp.Dial(os.Getenv("BROKER_URL"))
+	if err != nil {
+		return err
+	}
+	closeChan := make(chan *amqp.Error)
+	go func() {
+		e := <-closeChan
+		sigChan <- e
+	}()
+	conn.NotifyClose(closeChan)
+	rmqConnection.conn = conn
+	connLock.Unlock()
+	return nil
+}
+
+func (rc *RmqConnection) NewChannel() (*amqp.Channel, error) {
+	return rc.conn.Channel()
+}
+
+func (rc *RmqConnection) AddConnectionChangedListener(closedListener OnConnectionChanged) {
+	rc.lock.Lock()
+	defer rc.lock.Unlock()
+
+	rc.OnConnectionChangedListeners = append(rc.OnConnectionChangedListeners, closedListener)
 }
 
 func (r *Broker) DeclareQueue(queueName string) (amqp.Queue, error) {

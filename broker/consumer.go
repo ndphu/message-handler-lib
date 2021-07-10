@@ -20,42 +20,54 @@ type ConsumerWorker struct {
 }
 
 type QueueConsumer struct {
-	consumers []*ConsumerWorker
-	ctx       context.Context
-	cancel    context.CancelFunc
-	stopped   chan bool
-	handler   DeliveryHandler
+	consumers     []*ConsumerWorker
+	ctx           context.Context
+	cancel        context.CancelFunc
+	stopped       chan bool
+	handler       DeliveryHandler
+	queueName     string
+	consumerCount int
 }
 
 type DeliveryHandler func(d amqp.Delivery)
 
 func NewQueueConsumer(queueName string, consumerCount int, handler DeliveryHandler) (*QueueConsumer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	worker := make([]*ConsumerWorker, consumerCount)
-	var cm = &QueueConsumer{
+	var qc = &QueueConsumer{
 		cancel:  cancel,
 		ctx:     ctx,
 		stopped: make(chan bool, 1),
 		handler: handler,
+		queueName: queueName,
+		consumerCount: consumerCount,
 	}
-
-	for i := 0; i < consumerCount; i++ {
-		newBroker, err := NewBroker()
-		if err != nil {
-			cm.Log("Fail to init worker", i)
-			return nil, err
+	rmqConnection.AddConnectionChangedListener(func(e *amqp.Error) {
+		qc.Log("Connection closed.")
+		qc.Stop()
+		if err := qc.Start(); err != nil {
+			log.Println("Fail to restart...", err.Error())
 		}
-		worker[i] = NewWorker(newBroker, queueName, handler)
-	}
-	cm.consumers = worker
-
-	return cm, nil
+	})
+	return qc, nil
 }
 
-func (qc *QueueConsumer) Start() {
-	for _, cw := range qc.consumers {
-		cw.Start()
+func (qc *QueueConsumer) Start() error {
+	worker := make([]*ConsumerWorker, qc.consumerCount)
+	for i := 0; i < qc.consumerCount; i++ {
+		newBroker, err := rmqConnection.NewBroker()
+		if err != nil {
+			qc.Log("Fail to init worker", i)
+			return err
+		}
+		worker[i] = NewWorker(newBroker, qc.queueName, qc.handler)
 	}
+	qc.consumers = worker
+	for _, cw := range qc.consumers {
+		if err := cw.Start(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (qc *QueueConsumer) Stop() error {
@@ -74,10 +86,16 @@ func (qc *QueueConsumer) Stop() error {
 	}
 	wg.Wait()
 
+	qc.Log("QueueConsumer: Stopped successfully")
+
 	return nil
 }
 
 func (qc *QueueConsumer) Log(args ... interface{}) {
+	msg := ""
+	for _, arg := range args {
+		msg = msg + fmt.Sprintf("%s ", arg)
+	}
 	log.Println("QueueConsumer:", args)
 }
 
@@ -99,7 +117,7 @@ func (cw *ConsumerWorker) Log(tag string, args ...interface{}) {
 	for _, arg := range args {
 		msg = msg + fmt.Sprintf("%s ", arg)
 	}
-	log.Printf("Worker - %s - %s - %s\n", cw.consumerId, tag, args)
+	log.Printf("Worker - %s - %s - %s\n", cw.consumerId, tag, msg)
 }
 
 func (cw *ConsumerWorker) Start() error {
@@ -136,7 +154,14 @@ func (cw *ConsumerWorker) Stop() error {
 
 func (cw *ConsumerWorker) doStop() error {
 	cw.Log("Stop", "Stopping...")
-	defer func() { cw.stopped <- true }()
+	defer func() {
+		select {
+		case  cw.stopped <- true:
+				return
+		default:
+			// stop signal not send
+		}
+	}()
 	if err := cw.broker.StopConsume(cw.consumerId); err != nil {
 		cw.Log("Stop", "Fail to stopConsume by error", err.Error())
 		return err

@@ -23,7 +23,6 @@ type RpcResponse struct {
 type RpcClient struct {
 	workerId string
 	timeout  time.Duration
-	broker   *Broker
 }
 
 type ExecResult struct {
@@ -36,12 +35,10 @@ func NewRpcClient(workerId string) (*RpcClient, error) {
 }
 
 func NewRpcClientWithTimeout(workerId string, timeout time.Duration) (*RpcClient, error) {
-	broker, err := NewBroker()
 	return &RpcClient{
 		workerId: workerId,
 		timeout:  timeout,
-		broker:   broker,
-	}, err
+	}, nil
 }
 
 func (c *RpcClient) RpcQueue() string {
@@ -49,7 +46,7 @@ func (c *RpcClient) RpcQueue() string {
 }
 
 func (c *RpcClient) Send(request *RpcRequest) (error) {
-	broker, err := NewBroker()
+	broker, err := rmqConnection.NewBroker()
 	if err != nil {
 		return err
 	}
@@ -59,15 +56,23 @@ func (c *RpcClient) Send(request *RpcRequest) (error) {
 	}
 	rpcQueue := c.RpcQueue()
 	log.Println("RPC: Sending RPC request to RPC queue", rpcQueue)
-	if err := broker.PublishRpcRequest(rpcQueue, "", "", request); err != nil {
-		log.Println("RPC: Failed to publish message to RPC queue", rpcQueue)
+	data, err := json.Marshal(request)
+	if err != nil {
+		log.Println("RPC: Fail to marshall RPC request")
 		return err
 	}
-	return nil
+	return broker.channel.Publish("", // exchange
+		rpcQueue,                       // routing key
+		false,                          // mandatory
+		false,                          // immediate
+		amqp.Publishing{
+			ContentType:   "text/plain",
+			Body:          data,
+		})
 }
 
 func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
-	broker, err := NewBroker()
+	broker, err := rmqConnection.NewBroker()
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +80,21 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 	if err != nil {
 		log.Println("Fail to create broker", err.Error())
 	}
-	replyTo, err := c.DeclareReplyToQueue()
+
+	replyTo, err := broker.channel.QueueDeclare(
+		"",    // name
+		false, // durable
+		false, // delete when unused
+		true,  // exclusive
+		false, // noWait
+		nil,   // arguments
+	)
+
 	if err != nil {
 		log.Println("RPC: Fail to declare reply to queue")
 		return nil, err
 	}
+
 	log.Println("RPC: Declared replyTo queue", replyTo.Name)
 
 	msgs, err := broker.Consume(replyTo.Name, "")
@@ -93,8 +108,22 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 
 	rpcQueue := c.RpcQueue()
 	log.Println("RPC: Sending RPC request to RPC queue", rpcQueue)
-	if err := broker.PublishRpcRequest(rpcQueue, replyTo.Name, corrId, request); err != nil {
-		log.Println("RPC: Failed to publish message to RPC queue", rpcQueue)
+
+	data, err := json.Marshal(request)
+	if err != nil {
+		log.Println("RPC: Fail to marshall RPC request")
+		return nil, err
+	}
+	if err := broker.channel.Publish("", // exchange
+		rpcQueue,                       // routing key
+		false,                          // mandatory
+		false,                          // immediate
+		amqp.Publishing{
+			ContentType:   "text/plain",
+			CorrelationId: corrId,
+			ReplyTo:       replyTo.Name,
+			Body:          data,
+		}); err != nil {
 		return nil, err
 	}
 
@@ -146,16 +175,6 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 
 	return result.response, result.err
 }
-func (c *RpcClient) DeclareReplyToQueue() (amqp.Queue, error) {
-	return c.broker.channel.QueueDeclare(
-		"",    // name
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // noWait
-		nil,   // arguments
-	)
-}
 
 func randomString(l int) string {
 	bytes := make([]byte, l)
@@ -167,22 +186,4 @@ func randomString(l int) string {
 
 func randInt(min int, max int) int {
 	return min + rand.Intn(max-min)
-}
-
-func (c *RpcClient) PublishRpcRequest(rpcQueue string, replyTo string, corrId string, request *RpcRequest) error {
-	data, err := json.Marshal(request)
-	if err != nil {
-		log.Println("RPC: Fail to marshall RPC request")
-		return err
-	}
-	return c.broker.channel.Publish("", // exchange
-		rpcQueue,                       // routing key
-		false,                          // mandatory
-		false,                          // immediate
-		amqp.Publishing{
-			ContentType:   "text/plain",
-			CorrelationId: corrId,
-			ReplyTo:       replyTo,
-			Body:          data,
-		})
 }

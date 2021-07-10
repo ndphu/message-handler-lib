@@ -68,7 +68,7 @@ func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, 
 }
 
 func SetupMessageQueue(exchangeName, queueName string) error {
-	b, err := broker.NewBroker()
+	b, err := broker.GetConnection().NewBroker()
 	if err != nil {
 
 	}
