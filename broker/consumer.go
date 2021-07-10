@@ -10,13 +10,13 @@ import (
 )
 
 type ConsumerWorker struct {
-	consumerId string
-	broker     *Broker
-	queueName  string
-	ctx        context.Context
-	cancel     context.CancelFunc
-	stopped    chan bool
-	handler    DeliveryHandler
+	consumerId     string
+	queueName      string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	stopped        chan bool
+	handler        DeliveryHandler
+	consumeChannel *amqp.Channel
 }
 
 type QueueConsumer struct {
@@ -54,12 +54,7 @@ func NewQueueConsumer(queueName string, consumerCount int, handler DeliveryHandl
 func (qc *QueueConsumer) Start() error {
 	worker := make([]*ConsumerWorker, qc.consumerCount)
 	for i := 0; i < qc.consumerCount; i++ {
-		newBroker, err := rmqConnection.NewBroker()
-		if err != nil {
-			qc.Log("Fail to init worker", i)
-			return err
-		}
-		worker[i] = NewWorker(newBroker, qc.queueName, qc.handler)
+		worker[i] = NewWorker(qc.queueName, qc.handler)
 	}
 	qc.consumers = worker
 	for _, cw := range qc.consumers {
@@ -99,11 +94,10 @@ func (qc *QueueConsumer) Log(args ... interface{}) {
 	log.Println("QueueConsumer:", args)
 }
 
-func NewWorker(broker *Broker, queueName string, handler DeliveryHandler) *ConsumerWorker {
+func NewWorker(queueName string, handler DeliveryHandler) *ConsumerWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ConsumerWorker{
 		consumerId: "consumer-" + uuid.New().String(),
-		broker:     broker,
 		queueName:  queueName,
 		ctx:        ctx,
 		cancel:     cancel,
@@ -121,11 +115,13 @@ func (cw *ConsumerWorker) Log(tag string, args ...interface{}) {
 }
 
 func (cw *ConsumerWorker) Start() error {
-	msgs, err := cw.broker.Consume(cw.queueName, cw.consumerId)
+	channel, msgs, err := Consume(cw.queueName, cw.consumerId)
 	if err != nil {
 		cw.Log("Start", "Fail to consume message from RPC queue", cw.queueName, "by error", err.Error())
 		return err
 	}
+
+	cw.consumeChannel = channel
 
 	go func() {
 		for {
@@ -162,7 +158,7 @@ func (cw *ConsumerWorker) doStop() error {
 			// stop signal not send
 		}
 	}()
-	if err := cw.broker.StopConsume(cw.consumerId); err != nil {
+	if err := StopConsume(cw.consumeChannel, cw.consumerId); err != nil {
 		cw.Log("Stop", "Fail to stopConsume by error", err.Error())
 		return err
 	}

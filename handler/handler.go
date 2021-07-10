@@ -68,17 +68,16 @@ func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, 
 }
 
 func SetupMessageQueue(exchangeName, queueName string) error {
-	b, err := broker.GetConnection().NewBroker()
+	queue, err := broker.DeclareQueue(queueName)
 	if err != nil {
-
-	}
-	queue, err := b.DeclareQueue(queueName)
-	if err != nil {
-		log.Fatalf("Fail to declare queue %s by error %v\n", queueName, err)
+		log.Printf("Fail to declare queue %s by error %v\n", queueName, err)
+		return err
 	}
 	log.Println("Declared queue", queue.Name)
-	if err := b.BindFanout(queueName, exchangeName); err != nil {
+	if err := broker.BindFanout(queueName, exchangeName); err != nil {
 		log.Fatalf("Fail to bind queue %s to fanout %s by error %v\n", queueName, exchangeName, err)
 	}
 	return err
 }
+
+

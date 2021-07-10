@@ -46,14 +46,12 @@ func (c *RpcClient) RpcQueue() string {
 }
 
 func (c *RpcClient) Send(request *RpcRequest) (error) {
-	broker, err := rmqConnection.NewBroker()
+	channel, err := NewChannel()
 	if err != nil {
+		log.Printf("RPC: Fail to create channel to send RPC request. Error = %v\n", err)
 		return err
 	}
-	defer broker.channel.Close()
-	if err != nil {
-		log.Println("Fail to create broker", err.Error())
-	}
+	defer channel.Close()
 	rpcQueue := c.RpcQueue()
 	log.Println("RPC: Sending RPC request to RPC queue", rpcQueue)
 	data, err := json.Marshal(request)
@@ -61,7 +59,7 @@ func (c *RpcClient) Send(request *RpcRequest) (error) {
 		log.Println("RPC: Fail to marshall RPC request")
 		return err
 	}
-	return broker.channel.Publish("", // exchange
+	return channel.Publish("", // exchange
 		rpcQueue,                       // routing key
 		false,                          // mandatory
 		false,                          // immediate
@@ -72,16 +70,17 @@ func (c *RpcClient) Send(request *RpcRequest) (error) {
 }
 
 func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
-	broker, err := rmqConnection.NewBroker()
+	channel, err := NewChannel()
 	if err != nil {
+		log.Printf("RCP: Fail to create channel to send RPC request. Error = %v\n", err)
 		return nil, err
 	}
-	defer broker.channel.Close()
+	defer channel.Close()
 	if err != nil {
 		log.Println("Fail to create broker", err.Error())
 	}
 
-	replyTo, err := broker.channel.QueueDeclare(
+	replyTo, err := channel.QueueDeclare(
 		"",    // name
 		false, // durable
 		false, // delete when unused
@@ -97,7 +96,8 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 
 	log.Println("RPC: Declared replyTo queue", replyTo.Name)
 
-	msgs, err := broker.Consume(replyTo.Name, "")
+	replyChannel, msgs, err := Consume(replyTo.Name, "")
+	defer replyChannel.Close()
 
 	if err != nil {
 		log.Println("RPC: Fail to consume replyTo queue")
@@ -114,7 +114,7 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 		log.Println("RPC: Fail to marshall RPC request")
 		return nil, err
 	}
-	if err := broker.channel.Publish("", // exchange
+	if err := channel.Publish("", // exchange
 		rpcQueue,                       // routing key
 		false,                          // mandatory
 		false,                          // immediate
