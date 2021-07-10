@@ -126,8 +126,12 @@ func (cw *ConsumerWorker) Start() error {
 	go func() {
 		for {
 			select {
-			case d := <-msgs:
+			case d, ok := <-msgs:
 				{
+					if !ok {
+						// channel closed!
+						break
+					}
 					d.Ack(false)
 					cw.handler(d)
 				}
