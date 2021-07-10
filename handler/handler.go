@@ -15,6 +15,7 @@ type EventHandler struct {
 	consumer     *broker.QueueConsumer
 	queueName    string
 	exchangeName string
+	removeQueue  bool
 }
 
 type EventHandlerConfig struct {
@@ -22,6 +23,7 @@ type EventHandlerConfig struct {
 	ConsumerId          string
 	ConsumerWorkerCount int
 	ServiceName         string
+	RemoveQueue         bool
 }
 
 func (h *EventHandler) Start() error {
@@ -30,7 +32,23 @@ func (h *EventHandler) Start() error {
 }
 
 func (h *EventHandler) Stop() error {
+	defer func() {
+		if h.removeQueue {
+			log.Println("EventHandler - Removing queue", h.queueName)
+			if _, err := broker.RemoveQueue(h.queueName); err != nil {
+				log.Println("EventHandler - Fail to remove queue", h.queueName)
+			}
+		}
+	}()
 	return h.consumer.Stop()
+}
+
+func (h *EventHandler) QueueName() string {
+	return h.queueName
+}
+
+func (h *EventHandler) ExchangeName() string {
+	return h.exchangeName
 }
 
 func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, error) {
@@ -55,6 +73,7 @@ func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, 
 			}
 		}
 	})
+
 	if err != nil {
 		log.Printf("Fail to create consumer for queue=%s error=%v\n", queueName, err)
 		return nil, err
@@ -64,6 +83,7 @@ func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, 
 		consumer:     consumer,
 		queueName:    queueName,
 		exchangeName: exchange,
+		removeQueue:  c.RemoveQueue,
 	}, nil
 }
 
@@ -79,5 +99,3 @@ func SetupMessageQueue(exchangeName, queueName string) error {
 	}
 	return err
 }
-
-
