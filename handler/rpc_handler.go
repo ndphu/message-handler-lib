@@ -19,9 +19,9 @@ type RpcHandlerConfig struct {
 	ConsumerCount int
 }
 
-type OnNewRpcRequest func(request *broker.RpcRequest)
+type RpcRequestHandler func(request *broker.RpcRequest) (interface{}, error)
 
-func NewRpcHandler(c RpcHandlerConfig, callback OnNewRpcRequest) (*RpcHandler, error) {
+func NewRpcHandler(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, error) {
 	queueName := "/worker/" + c.WorkerId + "/rpc_queue"
 
 	if _, err := broker.DeclareQueue(queueName); err != nil {
@@ -35,8 +35,32 @@ func NewRpcHandler(c RpcHandlerConfig, callback OnNewRpcRequest) (*RpcHandler, e
 			if err := json.Unmarshal(d.Body, &request); err != nil {
 				log.Println("RpcHandler - Fail to unmarshal delivery body by error", err.Error())
 			} else {
-				if callback != nil {
-					callback(request)
+				if handler != nil {
+					result, err := handler(request)
+
+					if d.ReplyTo == "" {
+						log.Println("RpcHandler - RPC request does not have replyTo queue")
+						return
+					}
+
+					resp := broker.RpcResponse{
+						Request: *request,
+						Success: err == nil,
+						Response: result,
+					}
+					if err != nil {
+						resp.Error = err.Error()
+					}
+
+					if payload, err := json.Marshal(resp); err != nil {
+						log.Println("RpcHandler - Fail to marshall RPC response", err.Error())
+						return
+					} else {
+						if err := broker.PublishRpcResponse(d, string(payload)); err != nil {
+							log.Println("RpcHandler - Fail to send RPC response to ReplyTo queue", d.ReplyTo)
+							return
+						}
+					}
 				}
 			}
 		} else {

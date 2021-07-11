@@ -18,6 +18,8 @@ type RpcRequest struct {
 type RpcResponse struct {
 	Request  RpcRequest  `json:"request"`
 	Response interface{} `json:"response"`
+	Success  bool        `json:"success"`
+	Error    string      `json:"error"`
 }
 
 type RpcClient struct {
@@ -60,12 +62,12 @@ func (c *RpcClient) Send(request *RpcRequest) (error) {
 		return err
 	}
 	return channel.Publish("", // exchange
-		rpcQueue,                       // routing key
-		false,                          // mandatory
-		false,                          // immediate
+		rpcQueue,              // routing key
+		false,                 // mandatory
+		false,                 // immediate
 		amqp.Publishing{
-			ContentType:   "text/plain",
-			Body:          data,
+			ContentType: "text/plain",
+			Body:        data,
 		})
 }
 
@@ -115,9 +117,9 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 		return nil, err
 	}
 	if err := channel.Publish("", // exchange
-		rpcQueue,                       // routing key
-		false,                          // mandatory
-		false,                          // immediate
+		rpcQueue,                 // routing key
+		false,                    // mandatory
+		false,                    // immediate
 		amqp.Publishing{
 			ContentType:   "text/plain",
 			CorrelationId: corrId,
