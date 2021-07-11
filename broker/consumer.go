@@ -164,8 +164,12 @@ func (cw *ConsumerWorker) doStop() error {
 	}()
 	if err := StopConsume(cw.consumeChannel, cw.consumerId); err != nil {
 		cw.Log("Stop", "Fail to stopConsume by error", err.Error())
-		return err
 	}
+
+	if err := cw.consumeChannel.Close(); err != nil {
+		cw.Log("Stop", "Fail to stopConsume by error", err.Error())
+	}
+
 	cw.Log("Stop", "Stopped successfully")
 	return nil
 }
