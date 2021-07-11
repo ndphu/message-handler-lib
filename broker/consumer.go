@@ -111,7 +111,7 @@ func (cw *ConsumerWorker) Log(tag string, args ...interface{}) {
 	for _, arg := range args {
 		msg = msg + fmt.Sprintf("%s ", arg)
 	}
-	log.Printf("Worker - %s - %s - %s\n", cw.consumerId, tag, msg)
+	log.Printf("ConsumerWorker - %s - %s - %s\n", cw.consumerId, tag, msg)
 }
 
 func (cw *ConsumerWorker) Start() error {
