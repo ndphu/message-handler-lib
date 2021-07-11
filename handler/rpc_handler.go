@@ -65,10 +65,20 @@ func invokeHandler(d amqp.Delivery, request broker.RpcRequest, handler RpcReques
 	resp := broker.RpcResponse{
 		Request: request,
 		Success: err == nil,
-		Response: result,
 	}
+
 	if err != nil {
 		resp.Error = err.Error()
+	}
+
+	if result == nil {
+		resp.Response = ""
+	} else {
+		if payload, err := json.Marshal(result); err != nil {
+			resp.Error = err.Error()
+		} else {
+			resp.Response = string(payload)
+		}
 	}
 
 	if payload, err := json.Marshal(resp); err != nil {

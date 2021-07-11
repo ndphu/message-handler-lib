@@ -16,10 +16,10 @@ type RpcRequest struct {
 }
 
 type RpcResponse struct {
-	Request  RpcRequest  `json:"request"`
-	Response interface{} `json:"response"`
-	Success  bool        `json:"success"`
-	Error    string      `json:"error"`
+	Request  RpcRequest `json:"request"`
+	Response string     `json:"response"`
+	Success  bool       `json:"success"`
+	Error    string     `json:"error"`
 }
 
 type RpcClient struct {
