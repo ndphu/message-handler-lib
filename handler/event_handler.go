@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"github.com/ndphu/message-handler-lib/broker"
 	"github.com/ndphu/message-handler-lib/model"
-	"github.com/ndphu/message-handler-lib/utils"
 	"github.com/streadway/amqp"
 	"log"
 )
@@ -25,6 +24,13 @@ type EventHandlerConfig struct {
 	ServiceName         string
 	RemoveQueue         bool
 }
+
+func (conf EventHandlerConfig) GetQueueAndExchangeName() (string, string) {
+	exchange := "/worker/" + conf.WorkerId + "/textMessages"
+	queueName := "/message-handler/" + conf.ServiceName + "/queue-" + conf.ConsumerId
+	return exchange, queueName
+}
+
 
 func (h *EventHandler) Start() error {
 	h.consumer.Start()
@@ -53,7 +59,7 @@ func (h *EventHandler) ExchangeName() string {
 
 func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, error) {
 	// loading configuration
-	exchange, queueName := utils.GetQueueAndExchangeName(c.ServiceName, c.WorkerId, c.ConsumerId)
+	exchange, queueName := c.GetQueueAndExchangeName()
 
 	// binding
 	if err := SetupMessageQueue(exchange, queueName); err != nil {
@@ -90,12 +96,13 @@ func NewEventHandler(c EventHandlerConfig, callback OnNewEvent) (*EventHandler, 
 func SetupMessageQueue(exchangeName, queueName string) error {
 	queue, err := broker.DeclareQueue(queueName)
 	if err != nil {
-		log.Printf("Fail to declare queue %s by error %v\n", queueName, err)
+		log.Printf("EventHandler - Fail to declare queue %s by error %v\n", queueName, err)
 		return err
 	}
-	log.Println("Declared queue", queue.Name)
+	log.Println("EventHandler - Declared queue", queue.Name)
 	if err := broker.BindFanout(queueName, exchangeName); err != nil {
-		log.Fatalf("Fail to bind queue %s to fanout %s by error %v\n", queueName, exchangeName, err)
+		log.Printf("EventHandler - Fail to bind queue %s to fanout %s by error %v\n", queueName, exchangeName, err)
+		return err
 	}
-	return err
+	return nil
 }
