@@ -19,7 +19,7 @@ type RpcHandlerConfig struct {
 	ConsumerCount int
 }
 
-type RpcRequestHandler func(request *broker.RpcRequest) (interface{}, error)
+type RpcRequestHandler func(request broker.RpcRequest) (interface{}, error)
 
 func NewRpcHandler(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, error) {
 	queueName := "/worker/" + c.WorkerId + "/rpc_queue"
@@ -31,36 +31,12 @@ func NewRpcHandler(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, 
 
 	qc, err := broker.NewQueueConsumer(queueName, c.ConsumerCount, func(d amqp.Delivery) {
 		if len(d.Body) > 0 {
-			var request *broker.RpcRequest
+			var request broker.RpcRequest
 			if err := json.Unmarshal(d.Body, &request); err != nil {
 				log.Println("RpcHandler - Fail to unmarshal delivery body by error", err.Error())
 			} else {
 				if handler != nil {
-					result, err := handler(request)
-
-					if d.ReplyTo == "" {
-						log.Println("RpcHandler - RPC request does not have replyTo queue")
-						return
-					}
-
-					resp := broker.RpcResponse{
-						Request: *request,
-						Success: err == nil,
-						Response: result,
-					}
-					if err != nil {
-						resp.Error = err.Error()
-					}
-
-					if payload, err := json.Marshal(resp); err != nil {
-						log.Println("RpcHandler - Fail to marshall RPC response", err.Error())
-						return
-					} else {
-						if err := broker.PublishRpcResponse(d, string(payload)); err != nil {
-							log.Println("RpcHandler - Fail to send RPC response to ReplyTo queue", d.ReplyTo)
-							return
-						}
-					}
+					go invokeHandler(d, request, handler)
 				}
 			}
 		} else {
@@ -77,6 +53,33 @@ func NewRpcHandler(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, 
 		consumer:    qc,
 		removeQueue: c.RemoveQueue,
 	}, nil
+}
+func invokeHandler(d amqp.Delivery, request broker.RpcRequest, handler RpcRequestHandler) {
+	result, err := handler(request)
+
+	if d.ReplyTo == "" {
+		log.Println("RpcHandler - RPC request does not have replyTo queue")
+		return
+	}
+
+	resp := broker.RpcResponse{
+		Request: request,
+		Success: err == nil,
+		Response: result,
+	}
+	if err != nil {
+		resp.Error = err.Error()
+	}
+
+	if payload, err := json.Marshal(resp); err != nil {
+		log.Println("RpcHandler - Fail to marshall RPC response", err.Error())
+		return
+	} else {
+		if err := broker.PublishRpcResponse(d, string(payload)); err != nil {
+			log.Println("RpcHandler - Fail to send RPC response to ReplyTo queue", d.ReplyTo)
+			return
+		}
+	}
 }
 
 func (rh *RpcHandler) Start() error {
