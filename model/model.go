@@ -40,6 +40,10 @@ func (e *MessageEvent) IsTextMessage() bool {
 	return e.Type == "EventMessage" && e.ResourceType == "NewMessage" && e.Resource.MessageType == "RichText"
 }
 
+func (e *MessageEvent) IsMediaMessage() bool {
+	return e.Type == "EventMessage" && e.ResourceType == "NewMessage" && e.Resource.MessageType == "RichText/UriObject"
+}
+
 func (e *MessageEvent) GetContent() string {
 	return e.Resource.Content
 }

@@ -17,20 +17,25 @@ type EventHandler struct {
 	removeQueue  bool
 }
 
+type QueueNameOverrideCallback func() (string, string)
+
 type EventHandlerConfig struct {
-	WorkerId            string
-	ConsumerId          string
-	ConsumerWorkerCount int
-	ServiceName         string
-	RemoveQueue         bool
+	WorkerId                  string
+	ConsumerId                string
+	ConsumerWorkerCount       int
+	ServiceName               string
+	RemoveQueue               bool
+	QueueNameOverrideCallback QueueNameOverrideCallback
 }
 
 func (conf EventHandlerConfig) GetQueueAndExchangeName() (string, string) {
-	exchange := "/worker/" + conf.WorkerId + "/textMessages"
-	queueName := "/message-handler/" + conf.ServiceName + "/queue-" + conf.ConsumerId
-	return exchange, queueName
+	if conf.QueueNameOverrideCallback == nil {
+		exchange := "/worker/" + conf.WorkerId + "/textMessages"
+		queueName := "/message-handler/" + conf.ServiceName + "/queue-" + conf.ConsumerId
+		return exchange, queueName
+	}
+	return conf.QueueNameOverrideCallback()
 }
-
 
 func (h *EventHandler) Start() error {
 	h.consumer.Start()

@@ -34,11 +34,11 @@ type DeliveryHandler func(d amqp.Delivery)
 func NewQueueConsumer(queueName string, consumerCount int, handler DeliveryHandler) (*QueueConsumer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var qc = &QueueConsumer{
-		cancel:  cancel,
-		ctx:     ctx,
-		stopped: make(chan bool, 1),
-		handler: handler,
-		queueName: queueName,
+		cancel:        cancel,
+		ctx:           ctx,
+		stopped:       make(chan bool, 1),
+		handler:       handler,
+		queueName:     queueName,
 		consumerCount: consumerCount,
 	}
 	rmqConnection.AddConnectionChangedListener(func(e *amqp.Error) {
@@ -117,7 +117,7 @@ func (cw *ConsumerWorker) Log(tag string, args ...interface{}) {
 func (cw *ConsumerWorker) Start() error {
 	channel, msgs, err := Consume(cw.queueName, cw.consumerId)
 	if err != nil {
-		cw.Log("Start", "Fail to consume message from RPC queue", cw.queueName, "by error", err.Error())
+		cw.Log("Start", "Fail to consume message from queue", cw.queueName, "by error", err.Error())
 		return err
 	}
 
@@ -156,8 +156,8 @@ func (cw *ConsumerWorker) doStop() error {
 	cw.Log("Stop", "Stopping...")
 	defer func() {
 		select {
-		case  cw.stopped <- true:
-				return
+		case cw.stopped <- true:
+			return
 		default:
 			// stop signal not send
 		}
@@ -172,4 +172,12 @@ func (cw *ConsumerWorker) doStop() error {
 
 	cw.Log("Stop", "Stopped successfully")
 	return nil
+}
+
+func (cw *ConsumerWorker) QueueName() string {
+	return cw.queueName
+}
+
+func (qc *QueueConsumer) QueueName() string {
+	return qc.queueName
 }
