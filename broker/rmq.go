@@ -23,31 +23,6 @@ func GetConnection() *RmqConnection {
 	return rmqConnection
 }
 
-//
-//func (rc *RmqConnection) NewBroker() (*Broker, error) {
-//	if channel, err := rc.NewChannel(); err != nil {
-//		return nil, err
-//	} else {
-//		if err := channel.Qos(250,
-//			0,
-//			false); err != nil {
-//			log.Println("Fail to setup Qos for channel", err.Error())
-//			return nil, err
-//		}
-//		b := &Broker{
-//			connection: rc.conn,
-//			channel:    channel,
-//		}
-//		return b, nil
-//	}
-//}
-//
-//type Broker struct {
-//	connection    *amqp.Connection
-//	channel       *amqp.Channel
-//	closeCallback OnConnectionChanged
-//}
-
 type OnConnectionChanged func(e *amqp.Error)
 
 func init() {
@@ -63,11 +38,11 @@ func init() {
 			log.Printf("Connection closed. Error = %v\n", e)
 			for {
 				if err := connect(); err != nil {
-					log.Printf("Fail to reconnect by error=%v\n.", err)
-					log.Printf("Retry in %d seconds\n", reconnectWait)
+					log.Printf("RmqConnection - Reconnect - Fail to reconnect by error=%v.\n", err)
+					log.Printf("RmqConnection - Reconnect - Retry in %d seconds\n", reconnectWait)
 					time.Sleep(time.Duration(reconnectWait) * time.Second)
 				} else {
-					log.Println("Reconnected!")
+					log.Println("RmqConnection - Reconnect - Successfully!")
 					rmqConnection.lock.Lock()
 					for _, listener := range rmqConnection.OnConnectionChangedListeners {
 						go listener(e)
@@ -82,6 +57,7 @@ func init() {
 
 func connect() error {
 	connLock.Lock()
+	defer connLock.Unlock()
 	conn, err := amqp.Dial(os.Getenv("BROKER_URL"))
 	if err != nil {
 		return err
@@ -93,8 +69,18 @@ func connect() error {
 	}()
 	conn.NotifyClose(closeChan)
 	rmqConnection.conn = conn
-	connLock.Unlock()
 	return nil
+}
+
+func (rc *RmqConnection) Reconnect() {
+	sleepInterval := 5
+	for rc.conn.IsClosed() {
+		if err := connect(); err != nil {
+			log.Println("RmqConnection - Reconnect - Fail to reconnect by error", err.Error())
+			log.Println("RmqConnection - Reconnect - Retrying after", sleepInterval, "seconds")
+			time.Sleep(time.Duration(sleepInterval) * time.Second)
+		}
+	}
 }
 
 func NewChannel() (*amqp.Channel, error) {
