@@ -91,7 +91,7 @@ func NewChannel() (*amqp.Channel, error) {
 	if err := channel.Qos(250,
 		0,
 		false); err != nil {
-		log.Println("Fail to setup Qos for channel", err.Error())
+		log.Println("RmqConnection - Fail to setup Qos for channel", err.Error())
 		return nil, err
 	}
 	return channel, nil
@@ -217,7 +217,6 @@ func StopConsume(channel *amqp.Channel, comsumerTag string) (error) {
 func PublishRpcRequest(rpcQueue string, replyTo string, corrId string, request *RpcRequest) error {
 	data, err := json.Marshal(request)
 	if err != nil {
-		log.Println("RPC: Fail to marshall RPC request")
 		return err
 	}
 	channel, err := NewChannel()

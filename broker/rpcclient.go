@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var ErrorInvalidRpcClientConfig = errors.New("InvalidRpcClientConfig")
+
 type RpcRequest struct {
 	Method string   `json:"method"`
 	Args   []string `json:"args"`
@@ -23,8 +25,8 @@ type RpcResponse struct {
 }
 
 type RpcClient struct {
-	workerId string
-	timeout  time.Duration
+	timeout   time.Duration
+	queueName string
 }
 
 type ExecResult struct {
@@ -32,39 +34,49 @@ type ExecResult struct {
 	err      error
 }
 
-func NewRpcClient(workerId string) (*RpcClient, error) {
-	return NewRpcClientWithTimeout(workerId, 30*time.Second)
+type RpcConfig struct {
+	QueueName string        `json:"queue"`
+	Timeout   time.Duration `json:"timeout"`
 }
 
-func NewRpcClientWithTimeout(workerId string, timeout time.Duration) (*RpcClient, error) {
+func GetWorkerRpcQueueName(workerId string) string {
+	return "/worker/" + workerId + "/rpc_queue"
+}
+
+func NewRpcClient(workerId string) (*RpcClient, error) {
+	return NewRpcClientWithConfig(RpcConfig{
+		QueueName: GetWorkerRpcQueueName(workerId),
+		Timeout:   30 * time.Second,
+	})
+}
+
+func NewRpcClientWithConfig(c RpcConfig) (*RpcClient, error) {
+	if c.QueueName == "" {
+		return nil, ErrorInvalidRpcClientConfig
+	}
 	return &RpcClient{
-		workerId: workerId,
-		timeout:  timeout,
+		queueName: c.QueueName,
+		timeout:   c.Timeout,
 	}, nil
 }
 
-func (c *RpcClient) RpcQueue() string {
-	return "/worker/" + c.workerId + "/rpc_queue"
-}
-
-func (c *RpcClient) Send(request *RpcRequest) (error) {
+func (c *RpcClient) Send(request *RpcRequest) error {
 	channel, err := NewChannel()
 	if err != nil {
 		log.Printf("RPC: Fail to create channel to send RPC request. Error = %v\n", err)
 		return err
 	}
 	defer channel.Close()
-	rpcQueue := c.RpcQueue()
-	log.Println("RPC: Sending RPC request to RPC queue", rpcQueue)
+	log.Println("RPC: Sending RPC request to RPC queue", c.queueName)
 	data, err := json.Marshal(request)
 	if err != nil {
 		log.Println("RPC: Fail to marshall RPC request")
 		return err
 	}
 	return channel.Publish("", // exchange
-		rpcQueue,              // routing key
-		false,                 // mandatory
-		false,                 // immediate
+		c.queueName, // routing key
+		false,    // mandatory
+		false,    // immediate
 		amqp.Publishing{
 			ContentType: "text/plain",
 			Body:        data,
@@ -108,8 +120,7 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 
 	corrId := randomString(32)
 
-	rpcQueue := c.RpcQueue()
-	log.Println("RPC: Sending RPC request to RPC queue", rpcQueue)
+	log.Println("RPC: Sending RPC request to RPC queue", c.queueName)
 
 	data, err := json.Marshal(request)
 	if err != nil {
@@ -117,9 +128,9 @@ func (c *RpcClient) SendAndReceive(request *RpcRequest) (*RpcResponse, error) {
 		return nil, err
 	}
 	if err := channel.Publish("", // exchange
-		rpcQueue,                 // routing key
-		false,                    // mandatory
-		false,                    // immediate
+		c.queueName, // routing key
+		false,    // mandatory
+		false,    // immediate
 		amqp.Publishing{
 			ContentType:   "text/plain",
 			CorrelationId: corrId,
