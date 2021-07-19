@@ -2,12 +2,16 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 	"log"
 	"sync"
+	"time"
 )
+
+var ErrorConsumerWorkerStopTimeout = errors.New("ConsumerWorkerStopTimeout")
 
 type ConsumerWorker struct {
 	consumerId     string
@@ -17,6 +21,7 @@ type ConsumerWorker struct {
 	stopped        chan bool
 	handler        DeliveryHandler
 	consumeChannel *amqp.Channel
+	running        bool
 }
 
 type QueueConsumer struct {
@@ -86,7 +91,7 @@ func (qc *QueueConsumer) Stop() error {
 	return nil
 }
 
-func (qc *QueueConsumer) Log(args ... interface{}) {
+func (qc *QueueConsumer) Log(args ...interface{}) {
 	msg := ""
 	for _, arg := range args {
 		msg = msg + fmt.Sprintf("%s ", arg)
@@ -120,36 +125,41 @@ func (cw *ConsumerWorker) Start() error {
 		cw.Log("Start", "Fail to consume message from queue", cw.queueName, "by error", err.Error())
 		return err
 	}
-
 	cw.consumeChannel = channel
-
 	go func() {
 		for {
 			select {
 			case d, ok := <-msgs:
 				{
 					if !ok {
-						// channel closed!
-						break
+						// channel closed or queue deleted
+						cw.running = false
+						return
 					}
 					d.Ack(false)
 					cw.handler(d)
 				}
 			case <-cw.ctx.Done():
 				cw.doStop()
+				cw.running = false
 				return
 			}
 		}
 	}()
 	cw.Log("Start", "Started successfully")
-
+	cw.running = true
 	return nil
 }
 
 func (cw *ConsumerWorker) Stop() error {
+	timer := time.NewTimer(5 * time.Second)
 	cw.cancel()
-	<-cw.stopped
-	return nil
+	select {
+	case <-cw.stopped:
+		return nil
+	case <-timer.C:
+		return ErrorConsumerWorkerStopTimeout
+	}
 }
 
 func (cw *ConsumerWorker) doStop() error {
