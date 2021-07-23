@@ -51,7 +51,10 @@ func (h *EventHandler) Stop() error {
 			}
 		}
 	}()
-	return h.consumer.Stop()
+	if h.consumer != nil {
+		return h.consumer.Stop()
+	}
+	return nil
 }
 
 func (h *EventHandler) QueueName() string {

@@ -96,7 +96,7 @@ func (qc *QueueConsumer) Log(args ...interface{}) {
 	for _, arg := range args {
 		msg = msg + fmt.Sprintf("%s ", arg)
 	}
-	log.Println("QueueConsumer:", args)
+	log.Println("QueueConsumer", "-", qc.queueName, "-", msg)
 }
 
 func NewWorker(queueName string, handler DeliveryHandler) *ConsumerWorker {

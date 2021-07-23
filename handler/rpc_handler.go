@@ -106,7 +106,10 @@ func (rh *RpcHandler) Stop() error {
 			}
 		}
 	}()
-	return rh.consumer.Stop()
+	if rh.consumer != nil {
+		return rh.consumer.Stop()
+	}
+	return nil
 }
 
 func (rh *RpcHandler) QueueName() string {
