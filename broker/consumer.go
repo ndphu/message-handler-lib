@@ -25,13 +25,14 @@ type ConsumerWorker struct {
 }
 
 type QueueConsumer struct {
-	consumers     []*ConsumerWorker
-	ctx           context.Context
-	cancel        context.CancelFunc
-	stopped       chan bool
-	handler       DeliveryHandler
-	queueName     string
-	consumerCount int
+	consumers        []*ConsumerWorker
+	ctx              context.Context
+	cancel           context.CancelFunc
+	stopped          chan bool
+	handler          DeliveryHandler
+	queueName        string
+	consumerCount    int
+	connChangedSubId string
 }
 
 type DeliveryHandler func(d amqp.Delivery)
@@ -46,9 +47,9 @@ func NewQueueConsumer(queueName string, consumerCount int, handler DeliveryHandl
 		queueName:     queueName,
 		consumerCount: consumerCount,
 	}
-	rmqConnection.AddConnectionChangedListener(func(e *amqp.Error) {
+	qc.connChangedSubId = rmqConnection.AddConnectionChangedListener(func(e *amqp.Error) {
 		qc.Log("Connection closed.")
-		qc.Stop()
+		_ = qc.doStop()
 		if err := qc.Start(); err != nil {
 			log.Println("Fail to restart...", err.Error())
 		}
@@ -71,22 +72,29 @@ func (qc *QueueConsumer) Start() error {
 }
 
 func (qc *QueueConsumer) Stop() error {
+	defer func() {
+		rmqConnection.RemoveConnectionChangedListener(qc.connChangedSubId)
+	}()
+	return qc.doStop()
+}
+
+func (qc *QueueConsumer) doStop() error {
 	wg := sync.WaitGroup{}
 
 	for _, rc := range qc.consumers {
 		wg.Add(1)
-		go func(_rc *ConsumerWorker) {
+		go func(cw *ConsumerWorker) {
 			defer wg.Done()
-			if err := _rc.Stop(); err != nil {
-				qc.Log("Fail to stop Consumer Worker", _rc.consumerId)
+			if err := cw.Stop(); err != nil {
+				qc.Log("Fail to stop Consumer Worker", cw.consumerId, err.Error())
 			} else {
-				qc.Log("Consumer Worker", _rc.consumerId, "stopped successfully.")
+				qc.Log("Consumer Worker", cw.consumerId, "stopped successfully.")
 			}
 		}(rc)
 	}
 	wg.Wait()
 
-	qc.Log("QueueConsumer: Stopped successfully")
+	qc.Log("Stopped successfully")
 
 	return nil
 }

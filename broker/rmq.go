@@ -2,6 +2,7 @@ package broker
 
 import (
 	"encoding/json"
+	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 	"log"
 	"os"
@@ -14,9 +15,9 @@ var connLock = sync.Mutex{}
 var sigChan = make(chan *amqp.Error)
 
 type RmqConnection struct {
-	conn                         *amqp.Connection
-	lock                         sync.Mutex
-	OnConnectionChangedListeners []OnConnectionChanged
+	conn                       *amqp.Connection
+	lock                       sync.Mutex
+	connectionChangedListeners map[string]OnConnectionChanged
 }
 
 func GetConnection() *RmqConnection {
@@ -27,7 +28,9 @@ type OnConnectionChanged func(e *amqp.Error)
 
 func init() {
 	reconnectWait := 5
-	rmqConnection = &RmqConnection{}
+	rmqConnection = &RmqConnection{
+		connectionChangedListeners: make(map[string]OnConnectionChanged),
+	}
 	if err := connect(); err != nil {
 		log.Fatalf("Fail to connect to RabbitMQ by error=%v\n", err)
 	}
@@ -44,7 +47,7 @@ func init() {
 				} else {
 					log.Println("RmqConnection - Reconnect - Successfully!")
 					rmqConnection.lock.Lock()
-					for _, listener := range rmqConnection.OnConnectionChangedListeners {
+					for _, listener := range rmqConnection.connectionChangedListeners {
 						go listener(e)
 					}
 					rmqConnection.lock.Unlock()
@@ -97,11 +100,20 @@ func NewChannel() (*amqp.Channel, error) {
 	return channel, nil
 }
 
-func (rc *RmqConnection) AddConnectionChangedListener(closedListener OnConnectionChanged) {
+func (rc *RmqConnection) AddConnectionChangedListener(closedListener OnConnectionChanged) string {
 	rc.lock.Lock()
 	defer rc.lock.Unlock()
 
-	rc.OnConnectionChangedListeners = append(rc.OnConnectionChangedListeners, closedListener)
+	subscribeId := uuid.New().String()
+	rc.connectionChangedListeners[subscribeId] = closedListener
+	return subscribeId
+}
+
+func (rc *RmqConnection) RemoveConnectionChangedListener(subscribeId string) {
+	rc.lock.Lock()
+	defer rc.lock.Unlock()
+
+	delete(rc.connectionChangedListeners, subscribeId)
 }
 
 func DeclareQueue(queueName string) (amqp.Queue, error) {
@@ -210,7 +222,7 @@ func Consume(queueName string, consumerTag string) (*amqp.Channel, <-chan amqp.D
 	return channel, deliveries, err
 }
 
-func StopConsume(channel *amqp.Channel, comsumerTag string) (error) {
+func StopConsume(channel *amqp.Channel, comsumerTag string) error {
 	return channel.Cancel(comsumerTag, false)
 }
 
