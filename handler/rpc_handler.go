@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/ndphu/message-handler-lib/broker"
 	"github.com/streadway/amqp"
 	"log"
@@ -14,22 +15,42 @@ type RpcHandler struct {
 }
 
 type RpcHandlerConfig struct {
-	WorkerId      string
+	UnitId        string
+	RpcQueue      string
 	RemoveQueue   bool
 	ConsumerCount int
+	RpcExchange   string
 }
 
 type RpcRequestHandler func(request broker.RpcRequest) (interface{}, error)
 
-func NewRpcHandler(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, error) {
-	queueName := "/worker/" + c.WorkerId + "/rpc_queue"
+func NewRpcHandler(unitId string, handler RpcRequestHandler) (*RpcHandler, error) {
+	return NewRpcHandlerWithConfig(RpcHandlerConfig{
+		UnitId:        unitId,
+		RpcQueue:      "/rpcHandler/" + unitId,
+		RemoveQueue:   true,
+		ConsumerCount: 4,
+		RpcExchange:   broker.DefaultRpcExchange,
+	}, handler)
+}
 
-	if _, err := broker.DeclareQueue(queueName); err != nil {
-		log.Println("RpcHandler - Fail to declare queue", queueName)
+func NewRpcHandlerWithConfig(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, error) {
+	if c.UnitId == "" || c.RpcQueue == "" || c.RpcExchange == "" || c.ConsumerCount <= 0 {
+		return nil, errors.New("InvalidArgument")
+	}
+
+	if _, err := broker.DeclareQueue(c.RpcQueue); err != nil {
+		log.Println("RpcHandler - Fail to declare queue", c.RpcQueue, "by error", err.Error())
 		return nil, err
 	}
 
-	qc, err := broker.NewQueueConsumer(queueName, c.ConsumerCount, func(d amqp.Delivery) {
+	if err := broker.BindQueue(c.RpcQueue, c.RpcExchange, c.UnitId); err != nil {
+		log.Println("RpcHandler - Fail to bind queue", c.RpcQueue, "to exchange", c.RpcExchange, "with routing key",
+			c.UnitId, "by error", err.Error())
+		return nil, err
+	}
+
+	qc, err := broker.NewQueueConsumer(c.RpcQueue, c.ConsumerCount, func(d amqp.Delivery) {
 		if len(d.Body) > 0 {
 			var request broker.RpcRequest
 			if err := json.Unmarshal(d.Body, &request); err != nil {
@@ -44,16 +65,17 @@ func NewRpcHandler(c RpcHandlerConfig, handler RpcRequestHandler) (*RpcHandler, 
 		}
 	})
 	if err != nil {
-		log.Println("RpcHandler - Fail to create consumer for queue", queueName)
+		log.Println("RpcHandler - Fail to create consumer for queue", c.RpcQueue, "by error", err.Error())
 		return nil, err
 	}
 
 	return &RpcHandler{
-		queueName:   queueName,
+		queueName:   c.RpcQueue,
 		consumer:    qc,
 		removeQueue: c.RemoveQueue,
 	}, nil
 }
+
 func invokeHandler(d amqp.Delivery, request broker.RpcRequest, handler RpcRequestHandler) {
 	result, err := handler(request)
 

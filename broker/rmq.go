@@ -149,6 +149,20 @@ func DeclareFanout(exchange string) (error) {
 	)
 }
 
+func BindQueue(queueName string, exchangeName string, routingKey string) error {
+	channel, err := NewChannel()
+	if err != nil {
+		return err
+	}
+	defer channel.Close()
+	return channel.QueueBind(
+		queueName,
+		routingKey,
+		exchangeName,
+		false,
+		nil)
+}
+
 func BindFanout(queueName string, exchangeName string) error {
 	channel, err := NewChannel()
 	if err != nil {
