@@ -26,7 +26,7 @@ func NewService(id string, desc Description, actions []Action) *Service {
 	return &Service{
 		id:      id,
 		desc:    desc,
-		actions: actions,
+		actions: append(getBasicActions(), actions...),
 	}
 }
 

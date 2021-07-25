@@ -1,6 +1,9 @@
 package service
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var ErrorInvalidActionArguments = errors.New("InvalidActionArgument")
 
@@ -24,3 +27,26 @@ type ActionContext struct {
 }
 
 type ActionResult map[string]interface{}
+
+func getBasicActions() []Action {
+	return []Action{
+		{
+			Name:          "service:ping",
+			ArgumentCount: 0,
+			Handler: func(args []string) (interface{}, error) {
+				return ActionResult{
+					"message": "pong",
+				}, nil
+			},
+		},
+		{
+			Name:          "service:getTime",
+			ArgumentCount: 0,
+			Handler: func(args []string) (interface{}, error) {
+				return ActionResult{
+					"time": time.Now(),
+				}, nil
+			},
+		},
+	}
+}
