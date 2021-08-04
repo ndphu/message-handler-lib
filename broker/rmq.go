@@ -276,8 +276,8 @@ func PublishRpcResponse(d amqp.Delivery, response string) error {
 	return channel.Publish(
 		"",        // exchange
 		d.ReplyTo, // routing key
-		false,     // mandatory
-		false,     // immediate
+		true,     // mandatory
+		true,     // immediate
 		amqp.Publishing{
 			ContentType:   "text/plain",
 			CorrelationId: d.CorrelationId,
