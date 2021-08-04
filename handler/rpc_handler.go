@@ -111,6 +111,8 @@ func invokeHandler(d amqp.Delivery, request broker.RpcRequest, handler RpcReques
 		if err := broker.PublishRpcResponse(d, string(payload)); err != nil {
 			log.Println("RpcHandler - Fail to send RPC response to ReplyTo queue", d.ReplyTo)
 			return
+		} else {
+			log.Println("RpcHandler - Successfully publish response to ReplyTo queue", d.ReplyTo)
 		}
 	}
 }
