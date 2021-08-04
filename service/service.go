@@ -148,7 +148,10 @@ func (s *Service) handleRpc(req broker.RpcRequest) (interface{}, error) {
 			if err := action.ValidateArgs(req.Args); err != nil {
 				return nil, err
 			}
-			return action.Handler(req.Args)
+			log.Println("DEBUG", "Handling service action", action.Name)
+			i, err := action.Handler(req.Args)
+			log.Println("DEBUG", "Handling finished for", action.Name)
+			return i, err
 		}
 	}
 	return nil, errors.New("ActionNotFound")
