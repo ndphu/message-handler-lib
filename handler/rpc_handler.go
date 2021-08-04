@@ -78,6 +78,7 @@ func NewRpcHandlerWithConfig(c RpcHandlerConfig, handler RpcRequestHandler) (*Rp
 
 func invokeHandler(d amqp.Delivery, request broker.RpcRequest, handler RpcRequestHandler) {
 	result, err := handler(request)
+	log.Println("RpcHandler - Received response from handler")
 
 	if d.ReplyTo == "" {
 		log.Println("RpcHandler - RPC request does not have replyTo queue")

@@ -132,7 +132,7 @@ func DeclareQueue(queueName string) (amqp.Queue, error) {
 	)
 }
 
-func DeclareFanout(exchange string) (error) {
+func DeclareFanout(exchange string) error {
 	channel, err := NewChannel()
 	if err != nil {
 		return err
@@ -251,9 +251,9 @@ func PublishRpcRequest(rpcQueue string, replyTo string, corrId string, request *
 	}
 	defer channel.Close()
 	return channel.Publish("", // exchange
-		rpcQueue,              // routing key
-		false,                 // mandatory
-		false,                 // immediate
+		rpcQueue, // routing key
+		false,    // mandatory
+		false,    // immediate
 		amqp.Publishing{
 			ContentType:   "text/plain",
 			CorrelationId: corrId,
@@ -263,6 +263,7 @@ func PublishRpcRequest(rpcQueue string, replyTo string, corrId string, request *
 }
 
 func PublishRpcResponse(d amqp.Delivery, response string) error {
+	log.Println("PublishRpcResponse - Sending RPC response to", d.ReplyTo)
 	if d.ReplyTo == "" {
 		// message has no reply-to queue
 		return nil
