@@ -268,12 +268,12 @@ func PublishRpcResponse(d amqp.Delivery, response string) error {
 		// message has no reply-to queue
 		return nil
 	}
-	channel, err := NewChannel()
+	channel, err := rmqConnection.conn.Channel()
 	if err != nil {
 		return err
 	}
 	defer channel.Close()
-	return channel.Publish(
+	err = channel.Publish(
 		"",        // exchange
 		d.ReplyTo, // routing key
 		false,     // mandatory
@@ -283,6 +283,12 @@ func PublishRpcResponse(d amqp.Delivery, response string) error {
 			CorrelationId: d.CorrelationId,
 			Body:          []byte(response),
 		})
+	if err != nil {
+		log.Println("DEBUG - Fail to publish RPC response by error", err.Error())
+	} else {
+		log.Println("DEBUG - Published RPC response successfully")
+	}
+	return err
 }
 func RemoveQueue(queueName string) (int, error) {
 	channel, err := NewChannel()
